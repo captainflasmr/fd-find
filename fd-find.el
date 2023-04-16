@@ -1,4 +1,4 @@
-(defvar fd-find-command "fd -0")
+(defvar fd-find-command "fd")
 (defvar fd-command-history nil)
 
 (defun fd-find-files (base-dir query-string &optional sort-by-size)
@@ -6,9 +6,9 @@
 Returns a list of file paths.
 If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
   (let* ((default-directory base-dir)
-         (fd-command (concat fd-find-command " " "-L" " " "-0" " " query-string))
+         (fd-command (concat fd-find-command " --no-ignore --absolute-path -0 " query-string))
          (sort-command (when sort-by-size
-                         (concat " | xargs -0 du | sort -nr | awk '{print $2}'"))))
+                         " | xargs -0 du --bytes | sort -nr | awk '{printf \"%s\\0\", $2}'")))
     (split-string
      (shell-command-to-string
       (concat fd-command sort-command)) "\0" t)))
@@ -39,20 +39,24 @@ If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
         (insert (format "Find results for '%s' in '%s'.\n\n" query-string base-dir))
         (insert (format "%d matching files found.\n" (length files)))
         (when filtered-files
-          (insert (format "Filtering with '%s'.\n\n" match-string))
+          (insert (format "Filtering with '%s'.\n" match-string))
           (setq files filtered-files)
-          (insert (format "%d filtered files found.\n" (length files))))
-        (dolist (file files)
-          (insert (format "%s\n" file)))
-        (goto-char (point-min))
-        (while (re-search-forward "[^[:space:]]+" nil t)
-          (make-text-button (match-beginning 0) (match-end 0)
-                            'action 'fd-find-open-file
-                            'follow-link t
-           'path (match-string-no-properties 0)))
-	  (setq buffer-read-only t))
+         (insert (format "%d filtered files found.\n" (length files))))
+		 (insert "-----\n")
+       (dolist (file files)
+		  (let ((file-info (file-attributes file)))
+         (insert (format "%s %s\n" (nth 7 file-info) file)))
+		  )
+		 (goto-char (point-min))
+       (goto-char (re-search-forward "-----" nil t))
+       (while (re-search-forward "\\(^[[:digit:]]+ \\)\\(/.*\\)$" nil t)
+        (make-text-button (match-beginning 2) (match-end 2)
+         'action 'fd-find-open-file
+         'follow-link t
+         'path (match-string-no-properties 2)))
+		 (setq buffer-read-only t))
 
-      (pop-to-buffer "*fd-find*"))))
+     (pop-to-buffer "*fd-find*"))))
 
 (defun fd-find-open-file (button)
   "Open the file corresponding to BUTTON."

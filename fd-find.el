@@ -1,8 +1,12 @@
 (defcustom fd-find-command "fd"
+;; (defcustom fd-find-command "find"
+;; (defcustom fd-find-command "rg"
   "find executable"
   :type 'string)
 
-(defcustom fd-find-arguments "--follow"
+(defcustom fd-find-arguments "--absolute-path --type f -0"
+;; (defcustom fd-find-arguments "-type f -printf \"$PWD/%p\\0\""
+;; (defcustom fd-find-arguments "--files --null"
   "Additional arguments to fd."
   :type '(choice (const :tag "None" nil)
                  (string :tag "Argument string")
@@ -15,14 +19,15 @@
 Returns a list of file paths.
 If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
   (let* ((default-directory base-dir)
-		    (fd-command (concat fd-find-command " --absolute-path --type f -0 " query-string))
+		    (fd-command (concat fd-find-command " " fd-find-arguments query-string))
           (no-ignore-command (when no-ignore " --no-ignore "))
+          ;; (no-ignore-command " ")
 		    (sort-command (when sort-by-size
 							     " | xargs -0 du --bytes | sort -nr | awk '{printf \"%s\\0\", $2}'")))
 
     (split-string
 	   (shell-command-to-string
-	     (concat fd-command no-ignore-command sort-command)) "\0" t)))
+	     (concat fd-command no-ignore-command)) "\0" t)))
 
 (defun fd-filter-files (files match-string)
  "Filter FILES to include only those that contain MATCH-STRING.

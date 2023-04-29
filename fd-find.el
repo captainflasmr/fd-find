@@ -1,17 +1,28 @@
-(defvar fd-find-command "fd")
+(defcustom fd-find-command "fd"
+  "find executable"
+  :type 'string)
+
+(defcustom fd-find-arguments "--follow"
+  "Additional arguments to fd."
+  :type '(choice (const :tag "None" nil)
+                 (string :tag "Argument string")
+                 (repeat :tag "Argument list" string)))
+
 (defvar fd-command-history nil)
 
-(defun fd-find-files (base-dir query-string &optional sort-by-size)
+(defun fd-find-files (base-dir query-string &optional sort-by-size no-ignore)
  "Find files in BASE-DIR that match QUERY-STRING using fd.
 Returns a list of file paths.
 If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
- (let* ((default-directory base-dir)
-		  (fd-command (concat fd-find-command " --no-ignore --absolute-path -0 " query-string))
-		  (sort-command (when sort-by-size
-							  " | xargs -0 du --bytes | sort -nr | awk '{printf \"%s\\0\", $2}'")))
-  (split-string
-	(shell-command-to-string
-	 (concat fd-command sort-command)) "\0" t)))
+  (let* ((default-directory base-dir)
+		    (fd-command (concat fd-find-command " --absolute-path --type f -0 " query-string))
+          (no-ignore-command (when no-ignore " --no-ignore "))
+		    (sort-command (when sort-by-size
+							     " | xargs -0 du --bytes | sort -nr | awk '{printf \"%s\\0\", $2}'")))
+
+    (split-string
+	   (shell-command-to-string
+	     (concat fd-command no-ignore-command sort-command)) "\0" t)))
 
 (defun fd-filter-files (files match-string)
  "Filter FILES to include only those that contain MATCH-STRING.
@@ -20,6 +31,20 @@ Returns a list of matching file paths."
   (lambda (file)
 	(string-match-p match-string file))
   files))
+
+(defun fd-find-complete (&optional initial)
+ "Find files using fd and display them in the completion system."
+  (interactive)
+  (let* ((dir default-directory)
+		    (file-list (fd-find-files dir "" t (if current-prefix-arg t nil)))
+          (metadata '((category . file)))
+          (file (completing-read (format "Find file in %s: " (abbreviate-file-name dir))
+                  (lambda (str pred action)
+                    (if (eq action 'metadata)
+                      `(metadata . ,metadata)
+                      (complete-with-action action file-list str pred)))
+                  nil t initial 'file-name-history)))
+    (when file (find-file (expand-file-name file dir)))))
 
 (defun fd-find (query-string match-string &optional sort-by-size)
  "Find files using fd and display them in a buffer.
@@ -31,10 +56,11 @@ If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
 	(setq sort-by-size current-prefix-arg)
 	))
  (let* ((base-dir default-directory)
-		  (files (fd-find-files base-dir query-string sort-by-size)))
+		  (files (fd-find-files base-dir query-string sort-by-size t)))
   (let ((filtered-files
-			(when match-string
+			(when (not (string-equal match-string ""))
 			 (fd-filter-files files match-string))))
+	;; (kill-buffer "*fd-find*")
 	(with-current-buffer (get-buffer-create "*fd-find*")
 	 (setq buffer-read-only nil)
 	 (erase-buffer)
@@ -56,15 +82,7 @@ If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
 	 (insert (format "\n%d matching files found.\n" (length files)))
 	 (insert "\n")
 
-	 (if (string-equal match-string "")
-	  (progn
-		(insert "Filter ")
-		(insert-text-button "off"
-		 'action 'fd-find-match-string
-		 'query-str query-string
-		 'match-str match-string
-		 'sort sort-by-size)
-		)
+	 (if (not (string-equal match-string ""))
 	  (progn
 		(insert "Filtering with ")
 		(insert-text-button match-string
@@ -74,7 +92,14 @@ If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
 		 'sort sort-by-size)
 		(setq files filtered-files)
 		(insert (format "\n%d filtered files found." (length files))))
-	  )
+	 (progn
+	  (insert "Filter ")
+	  (insert-text-button "off"
+		'action 'fd-find-match-string
+		'query-str query-string
+		'match-str match-string
+		'sort sort-by-size)
+	  ))
 
 	 (insert "\n-----\n")
 	 (dolist (file files)
@@ -96,7 +121,7 @@ If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
 (defun fd-find-query-string (button)
  ""
  (fd-find
-  (read-string "Query: " nil 'fd-command-history)
+  (read-string "Query: " (button-get button 'query-str) 'fd-command-history)
   (button-get button 'match-str)
   (button-get button 'sort)
   )
@@ -106,7 +131,7 @@ If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
  ""
  (fd-find
   (button-get button 'query-str)
-  (read-string "Match: " nil 'fd-command-history)
+  (read-string "Match: " (button-get button 'match-str) 'fd-command-history)
   (button-get button 'sort)
   )
  )

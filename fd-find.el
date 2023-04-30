@@ -1,12 +1,12 @@
 (defcustom fd-find-command "fd"
-;; (defcustom fd-find-command "find"
 ;; (defcustom fd-find-command "rg"
+;; (defcustom fd-find-command "find"
   "find executable"
   :type 'string)
 
 (defcustom fd-find-arguments "--absolute-path --type f -0"
-;; (defcustom fd-find-arguments "-type f -printf \"$PWD/%p\\0\""
 ;; (defcustom fd-find-arguments "--files --null"
+;; (defcustom fd-find-arguments "-type f -printf \"$PWD/%p\\0\""
   "Additional arguments to fd."
   :type '(choice (const :tag "None" nil)
                  (string :tag "Argument string")
@@ -18,16 +18,19 @@
  "Find files in BASE-DIR that match QUERY-STRING using fd.
 Returns a list of file paths.
 If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
-  (let* ((default-directory base-dir)
-		    (fd-command (concat fd-find-command " " fd-find-arguments query-string))
-          (no-ignore-command (when no-ignore " --no-ignore "))
-          ;; (no-ignore-command " ")
+  (let* ((fd-command (concat fd-find-command " " fd-find-arguments query-string))
+          (no-ignore-command (if (not (string-equal fd-find-command "find")) (when no-ignore " --no-ignore ")))
 		    (sort-command (when sort-by-size
 							     " | xargs -0 du --bytes | sort -nr | awk '{printf \"%s\\0\", $2}'")))
 
-    (split-string
-	   (shell-command-to-string
-	     (concat fd-command no-ignore-command)) "\0" t)))
+    (mapcar (lambda (path)
+              (file-relative-name path default-directory))
+      (split-string
+	     (shell-command-to-string (concat fd-command no-ignore-command sort-command))
+        "\0" t)
+      )
+    )
+  )
 
 (defun fd-filter-files (files match-string)
  "Filter FILES to include only those that contain MATCH-STRING.
@@ -41,7 +44,7 @@ Returns a list of matching file paths."
  "Find files using fd and display them in the completion system."
   (interactive)
   (let* ((dir default-directory)
-		    (file-list (fd-find-files dir "" t (if current-prefix-arg t nil)))
+		    (file-list (fd-find-files dir "" nil (if current-prefix-arg t nil)))
           (metadata '((category . file)))
           (file (completing-read (format "Find file in %s: " (abbreviate-file-name dir))
                   (lambda (str pred action)
@@ -113,11 +116,11 @@ If SORT-BY-SIZE is non-nil, sort the files by size (in bytes)."
 	  )
 	 (goto-char (point-min))
 	 (goto-char (re-search-forward "-----" nil t))
-	 (while (re-search-forward "\\(^[[:digit:]]+ \\)\\(/.*\\)$" nil t)
-	  (make-text-button (match-beginning 2) (match-end 2)
+	 (while (re-search-forward "^[[:digit:]]+[[:space:]]+\\(.*\\)$" nil t)
+	  (make-text-button (match-beginning 1) (match-end 1)
 		'action 'fd-find-open-file
 		'follow-link t
-		'path (match-string-no-properties 2)))
+		'path (match-string-no-properties 1)))
 	 (goto-char (point-min))
 	 (setq buffer-read-only t))
 
